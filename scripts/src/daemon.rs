@@ -9,6 +9,7 @@ use tracing::{error, info, warn};
 use crate::audit;
 use crate::egress;
 use crate::payment;
+use chrono::{DateTime, Utc};
 
 const DAEMON_PID_FILE: &str = "~/.sentinel/daemon.pid";
 const DAEMON_LOG_FILE: &str = "~/.sentinel/daemon.log";
@@ -41,6 +42,7 @@ pub async fn start(offline: bool) -> Result<()> {
     }
 
     // Premium gate: acquire x402 session token unless offline
+    let mut premium_until = None;
     if !offline {
         println!("Acquiring premium session via x402...");
         match payment::execute_x402_payment(
@@ -50,6 +52,7 @@ pub async fn start(offline: bool) -> Result<()> {
         .await
         {
             Ok(resp) => {
+                premium_until = extract_premium_expiry(&resp);
                 info!("Premium session granted: {:?}", resp);
             }
             Err(e) => {
@@ -64,7 +67,7 @@ pub async fn start(offline: bool) -> Result<()> {
     let state = DaemonState {
         pid: std::process::id(),
         started_at: chrono::Utc::now().to_rfc3339(),
-        premium_until: None,
+        premium_until,
     };
     fs::create_dir_all(resolve_home("~/.sentinel")).await?;
     fs::write(&pid_path, serde_json::to_string(&state)?).await?;
@@ -121,11 +124,53 @@ pub async fn status() -> Result<()> {
 
     println!("Daemon: running (PID {})", state.pid);
     println!("Started: {}", state.started_at);
-    match &state.premium_until {
-        Some(t) => println!("Premium active until: {}", t),
-        None => println!("Mode: free tier (file watch only)"),
+    if let Some(premium_until) = active_premium_until(&state) {
+        println!("Mode: paid");
+        println!("Premium active until: {}", premium_until);
+    } else {
+        println!("Mode: free tier (file watch only)");
     }
     Ok(())
+}
+
+fn extract_premium_expiry(resp: &serde_json::Value) -> Option<String> {
+    let metadata = resp.get("metadata").unwrap_or(resp);
+    let keys = [
+        "premium_until",
+        "expires_at",
+        "expiresAt",
+        "expiry",
+        "valid_until",
+        "validUntil",
+    ];
+
+    keys.into_iter().find_map(|key| {
+        metadata.get(key).and_then(|value| {
+            value.as_str().and_then(normalize_timestamp).or_else(|| {
+                value
+                    .as_i64()
+                    .and_then(|secs| DateTime::from_timestamp(secs, 0).map(|dt| dt.to_rfc3339()))
+            })
+        })
+    })
+}
+
+fn normalize_timestamp(raw: &str) -> Option<String> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&Utc).to_rfc3339());
+    }
+
+    if let Ok(secs) = raw.parse::<i64>() {
+        return DateTime::from_timestamp(secs, 0).map(|dt| dt.to_rfc3339());
+    }
+
+    None
+}
+
+fn active_premium_until(state: &DaemonState) -> Option<&str> {
+    let premium_until = state.premium_until.as_deref()?;
+    let parsed = DateTime::parse_from_rfc3339(premium_until).ok()?;
+    (parsed.with_timezone(&Utc) > Utc::now()).then_some(premium_until)
 }
 
 pub async fn logs(lines: usize) -> Result<()> {
