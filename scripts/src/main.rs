@@ -8,6 +8,7 @@ mod egress;
 mod injection;
 mod patterns;
 mod payment;
+mod process;
 mod report;
 
 #[derive(Parser)]
