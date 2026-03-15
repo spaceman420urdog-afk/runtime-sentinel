@@ -32,8 +32,12 @@ sentinel audit
 # Check a skill before installing it
 sentinel check author/skill-name
 
-# Start the background guardian (premium)
+# Start the guardian in foreground (premium)
 sentinel daemon start
+
+# Optional: run it in background at the shell level
+sentinel daemon start > ~/.sentinel/daemon.log 2>&1 &
+disown
 ```
 
 ---

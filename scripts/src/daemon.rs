@@ -24,11 +24,19 @@ pub async fn start(offline: bool) -> Result<()> {
 
     if pid_path.exists() {
         let state: DaemonState = serde_json::from_str(&fs::read_to_string(&pid_path).await?)?;
-        println!(
-            "Daemon already running (PID {}). Use `sentinel daemon stop` first.",
+        if process_running(state.pid) {
+            println!(
+                "Daemon already running (PID {}). Use `sentinel daemon stop` first.",
+                state.pid
+            );
+            return Ok(());
+        }
+
+        warn!(
+            "Removing stale daemon PID file for non-running PID {}",
             state.pid
         );
-        return Ok(());
+        fs::remove_file(&pid_path).await?;
     }
 
     // Premium gate: acquire x402 session token unless offline
@@ -74,7 +82,14 @@ pub async fn stop() -> Result<()> {
         return Ok(());
     }
     let state: DaemonState = serde_json::from_str(&fs::read_to_string(&pid_path).await?)?;
-    fs::remove_file(&pid_path).await?;
+    if !process_running(state.pid) {
+        fs::remove_file(&pid_path).await?;
+        println!(
+            "Daemon PID file existed, but process {} is not running. Cleaned up stale state.",
+            state.pid
+        );
+        return Ok(());
+    }
 
     // Send SIGTERM to the daemon process
     #[cfg(unix)]
@@ -82,6 +97,7 @@ pub async fn stop() -> Result<()> {
         libc::kill(state.pid as i32, libc::SIGTERM);
     }
 
+    fs::remove_file(&pid_path).await?;
     println!("Daemon stopped (was PID {}).", state.pid);
     Ok(())
 }
@@ -93,6 +109,15 @@ pub async fn status() -> Result<()> {
         return Ok(());
     }
     let state: DaemonState = serde_json::from_str(&fs::read_to_string(&pid_path).await?)?;
+    if !process_running(state.pid) {
+        fs::remove_file(&pid_path).await?;
+        println!(
+            "Daemon: not running (cleaned up stale PID file for {})",
+            state.pid
+        );
+        return Ok(());
+    }
+
     println!("Daemon: running (PID {})", state.pid);
     println!("Started: {}", state.started_at);
     match &state.premium_until {
@@ -231,5 +256,22 @@ fn resolve_home(path: &str) -> PathBuf {
             .join(stripped)
     } else {
         PathBuf::from(path)
+    }
+}
+
+fn process_running(pid: u32) -> bool {
+    #[cfg(unix)]
+    unsafe {
+        if libc::kill(pid as i32, 0) == 0 {
+            return true;
+        }
+
+        return std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        true
     }
 }
