@@ -1,0 +1,195 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'           # triggers on v0.1.0, v0.2.0, etc.
+  pull_request:
+    branches: [main]   # CI check on PRs (build only, no release upload)
+
+env:
+  CARGO_TERM_COLOR: always
+  BINARY_NAME: sentinel
+
+jobs:
+  # ── Lint and test on the host platform first ────────────────────────────────
+  check:
+    name: Check & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts/
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            scripts/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('scripts/Cargo.lock') }}
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test
+
+  # ── Cross-compile release binaries for all targets ──────────────────────────
+  build:
+    name: Build — ${{ matrix.target }}
+    needs: check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14              # M1 runner
+            cross: false
+          - target: x86_64-apple-darwin
+            os: macos-13              # Intel runner
+            cross: false
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true               # needs cross + Docker for ARM Linux
+
+    defaults:
+      run:
+        working-directory: scripts/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            scripts/target
+          key: ${{ matrix.target }}-cargo-${{ hashFiles('scripts/Cargo.lock') }}
+
+      - name: Install cross (ARM Linux only)
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build (native)
+        if: "!matrix.cross"
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Rename binary with target suffix
+        shell: bash
+        run: |
+          src="target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}"
+          dst="${{ env.BINARY_NAME }}-${{ matrix.target }}"
+          cp "$src" "../$dst"
+          echo "artifact=$dst" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ matrix.target }}
+          path: ${{ env.artifact }}
+          retention-days: 1
+
+  # ── Build universal macOS binary and produce checksums ──────────────────────
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    # Only runs on version tags, not PRs
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries/
+          merge-multiple: true
+
+      - name: Build universal macOS binary
+        run: |
+          # lipo requires both macOS binaries to be present
+          # On Ubuntu we use the pre-built artifacts directly
+          # A universal binary is produced by merging arm64 + x86_64 slices
+          if command -v lipo &>/dev/null; then
+            lipo -create \
+              binaries/sentinel-aarch64-apple-darwin \
+              binaries/sentinel-x86_64-apple-darwin \
+              -output binaries/sentinel-universal-macos
+          else
+            echo "lipo not available on this runner — skipping universal binary"
+            echo "(upload arm64 and x86_64 separately)"
+          fi
+
+      - name: Generate SHA-256 checksums
+        working-directory: binaries/
+        run: |
+          sha256sum sentinel-* > sentinel-checksums.txt
+          cat sentinel-checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: runtime-sentinel ${{ github.ref_name }}
+          body: |
+            ## runtime-sentinel ${{ github.ref_name }}
+
+            Runtime security guardian for OpenClaw agents.
+
+            ### Installation
+
+            ClawHub will handle installation automatically. To install manually:
+
+            ```bash
+            # macOS (Apple Silicon)
+            curl -L https://github.com/spaceman420urdog-afk/runtime-sentinel/releases/latest/download/sentinel-aarch64-apple-darwin -o sentinel
+            chmod +x sentinel && mv sentinel /usr/local/bin/
+
+            # macOS (Intel)
+            curl -L https://github.com/spaceman420urdog-afk/runtime-sentinel/releases/latest/download/sentinel-x86_64-apple-darwin -o sentinel
+            chmod +x sentinel && mv sentinel /usr/local/bin/
+
+            # Linux (x86_64)
+            curl -L https://github.com/spaceman420urdog-afk/runtime-sentinel/releases/latest/download/sentinel-x86_64-unknown-linux-gnu -o sentinel
+            chmod +x sentinel && mv sentinel /usr/local/bin/
+
+            # Linux (ARM64)
+            curl -L https://github.com/spaceman420urdog-afk/runtime-sentinel/releases/latest/download/sentinel-aarch64-unknown-linux-gnu -o sentinel
+            chmod +x sentinel && mv sentinel /usr/local/bin/
+            ```
+
+            Verify with: `sha256sum -c sentinel-checksums.txt`
+          files: |
+            binaries/sentinel-aarch64-apple-darwin
+            binaries/sentinel-x86_64-apple-darwin
+            binaries/sentinel-x86_64-unknown-linux-gnu
+            binaries/sentinel-aarch64-unknown-linux-gnu
+            binaries/sentinel-checksums.txt
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}

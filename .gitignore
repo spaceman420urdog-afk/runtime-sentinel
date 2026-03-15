@@ -1,0 +1,14 @@
+# Rust build artifacts
+scripts/target/
+# NOTE: Cargo.lock is intentionally committed — required for reproducible binary builds
+
+# Packaged skill files
+*.skill
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
