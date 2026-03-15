@@ -3,7 +3,7 @@ name = "sentinel"
 version = "0.1.0"
 edition = "2021"
 description = "Runtime security guardian for OpenClaw agents"
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/spaceman420urdog-afk/runtime-sentinel"
 rust-version = "1.77"
 
