@@ -107,11 +107,19 @@ pub async fn run_audit(skills_path: &str, offline: bool) -> Result<AuditReport> 
 
 /// Check a single skill (by path or clawhub ID)
 pub async fn check_skill(skill: &str, offline: bool) -> Result<AuditReport> {
-    let path = if skill.contains('/') && !skill.starts_with('.') && !skill.starts_with('/') {
+    let local_path = resolve_home(skill);
+    let path = if local_path.exists() || !is_probably_clawhub_id(skill) {
+        local_path
+    } else {
+        if offline {
+            anyhow::bail!(
+                "--offline mode: cannot fetch ClawHub skill '{}'; provide a local path instead",
+                skill
+            );
+        }
+
         // Looks like a ClawHub ID (author/skill-name) — fetch it to a temp dir
         fetch_clawhub_skill(skill).await?
-    } else {
-        resolve_home(skill)
     };
 
     let skill_name = path
@@ -430,6 +438,19 @@ async fn virustotal_check(path: &Path, skill_name: &str) -> Result<Vec<Finding>>
     Ok(findings)
 }
 
+fn is_probably_clawhub_id(skill: &str) -> bool {
+    if skill.starts_with('.') || skill.starts_with('/') || skill.starts_with('~') {
+        return false;
+    }
+
+    let mut parts = skill.split('/');
+    let author = parts.next();
+    let name = parts.next();
+
+    // Exactly two path segments in the form `author/skill-name`
+    author.is_some() && name.is_some() && parts.next().is_none()
+}
+
 async fn fetch_clawhub_skill(clawhub_id: &str) -> Result<PathBuf> {
     // Download skill zip to a temp directory for scanning before install
     let client = reqwest::Client::new();
@@ -480,5 +501,28 @@ fn resolve_home(path: &str) -> PathBuf {
             .join(stripped)
     } else {
         PathBuf::from(path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_probably_clawhub_id;
+
+    #[test]
+    fn clawhub_id_detection_accepts_author_skill_name() {
+        assert!(is_probably_clawhub_id("author/skill-name"));
+    }
+
+    #[test]
+    fn clawhub_id_detection_rejects_local_paths() {
+        assert!(!is_probably_clawhub_id("./author/skill-name"));
+        assert!(!is_probably_clawhub_id("/tmp/skill"));
+        assert!(!is_probably_clawhub_id("~/skills/skill-a"));
+    }
+
+    #[test]
+    fn clawhub_id_detection_rejects_non_canonical_ids() {
+        assert!(!is_probably_clawhub_id("author"));
+        assert!(!is_probably_clawhub_id("author/skill-name/extra"));
     }
 }
