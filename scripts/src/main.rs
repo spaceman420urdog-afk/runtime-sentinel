@@ -74,7 +74,7 @@ enum Command {
 
 #[derive(Subcommand)]
 enum DaemonAction {
-    /// Start the background guardian daemon
+    /// Start the guardian in the foreground (use shell backgrounding if desired)
     Start,
     /// Stop the daemon
     Stop,

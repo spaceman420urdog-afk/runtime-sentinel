@@ -30,7 +30,7 @@ exposed by ClawHavoc: backdoored skills, prompt injection via external data,
 credential exfiltration, and process-level abuse.
 
 **Free tier**: skill integrity checks, basic injection scanning.  
-**Premium** (x402/USDC/Base): continuous daemon mode, network egress
+**Premium** (x402/USDC/Base): continuous daemon monitoring, network egress
 monitoring, process anomaly detection, full audit log.
 
 ---
@@ -120,7 +120,10 @@ non-custodial. See `references/x402-payment.md` for the full payment flow.
 ### 5 — Daemon mode (premium)
 
 ```bash
-sentinel daemon start    # runs in background, writes to ~/.sentinel/daemon.log
+sentinel daemon start    # runs in foreground, writes to ~/.sentinel/daemon.log
+# Run in background from your shell if needed:
+#   sentinel daemon start > ~/.sentinel/daemon.log 2>&1 &
+#   disown
 sentinel daemon status
 sentinel daemon stop
 sentinel daemon logs     # tail the audit log
