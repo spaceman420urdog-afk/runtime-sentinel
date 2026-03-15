@@ -7,6 +7,7 @@ use tokio::fs;
 use tracing::{error, info, warn};
 
 use crate::audit;
+use crate::egress;
 use crate::payment;
 
 const DAEMON_PID_FILE: &str = "~/.sentinel/daemon.pid";
@@ -163,14 +164,139 @@ async fn run_watch_loop() -> Result<()> {
 
     info!("File watcher active");
 
-    for res in rx {
-        match res {
-            Ok(event) => handle_fs_event(event).await,
-            Err(e) => error!("Watcher error: {:?}", e),
+    let egress_interval = std::time::Duration::from_secs(10);
+    let mut last_egress_scan = std::time::Instant::now() - egress_interval;
+
+    loop {
+        match rx.recv_timeout(std::time::Duration::from_secs(2)) {
+            Ok(Ok(event)) => handle_fs_event(event).await,
+            Ok(Err(e)) => error!("Watcher error: {:?}", e),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+
+        if last_egress_scan.elapsed() >= egress_interval {
+            if let Err(e) = scan_egress().await {
+                warn!("Egress scan failed: {}", e);
+            }
+            last_egress_scan = std::time::Instant::now();
         }
     }
 
     Ok(())
+}
+
+async fn scan_egress() -> Result<()> {
+    let skill_pids = collect_skill_processes().await?;
+    if skill_pids.is_empty() {
+        return Ok(());
+    }
+
+    let events = egress::snapshot_connections(&skill_pids).await?;
+    for event in events.into_iter().filter(|e| !e.declared) {
+        let skill = event
+            .skill_name
+            .clone()
+            .unwrap_or_else(|| event.process_name.clone());
+        let severity = egress::undeclared_severity(&event.remote_addr, event.remote_port);
+        let msg = format!(
+            "[{}] {}: Undeclared outbound connection from pid {} ({}) to {}:{}",
+            severity, skill, event.pid, event.process_name, event.remote_addr, event.remote_port
+        );
+
+        log_alert(&msg).await;
+        if severity >= crate::audit::Severity::High {
+            eprintln!("🔴 {}", msg);
+        } else {
+            eprintln!("🟠 {}", msg);
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+async fn collect_skill_processes() -> Result<Vec<(u32, String)>> {
+    let mut out = Vec::new();
+    let mut dir = fs::read_dir("/proc").await?;
+
+    while let Some(entry) = dir.next_entry().await? {
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+            continue;
+        };
+
+        let cmdline_path = format!("/proc/{}/cmdline", pid);
+        let cmdline_bytes = match fs::read(&cmdline_path).await {
+            Ok(data) => data,
+            Err(_) => continue,
+        };
+
+        if cmdline_bytes.is_empty() {
+            continue;
+        }
+
+        let cmdline = String::from_utf8_lossy(&cmdline_bytes).replace('\0', " ");
+        if !cmdline.contains("/.openclaw/skills/") {
+            continue;
+        }
+
+        if let Some(skill_name) = extract_skill_name(&cmdline) {
+            out.push((pid, skill_name));
+        }
+    }
+
+    Ok(out)
+}
+
+#[cfg(target_os = "macos")]
+async fn collect_skill_processes() -> Result<Vec<(u32, String)>> {
+    let output = tokio::process::Command::new("ps")
+        .args(["-axo", "pid=,command="])
+        .output()
+        .await?;
+
+    if !output.status.success() {
+        anyhow::bail!("ps failed with {}", output.status);
+    }
+
+    let mut out = Vec::new();
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        let mut parts = line.trim().splitn(2, ' ');
+        let Some(pid_raw) = parts.next() else {
+            continue;
+        };
+        let Some(cmd) = parts.next() else {
+            continue;
+        };
+        let Ok(pid) = pid_raw.trim().parse::<u32>() else {
+            continue;
+        };
+
+        if !cmd.contains("/.openclaw/skills/") {
+            continue;
+        }
+
+        if let Some(skill_name) = extract_skill_name(cmd) {
+            out.push((pid, skill_name));
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+async fn collect_skill_processes() -> Result<Vec<(u32, String)>> {
+    Ok(Vec::new())
+}
+
+fn extract_skill_name(cmd: &str) -> Option<String> {
+    let marker = "/.openclaw/skills/";
+    let start = cmd.find(marker)? + marker.len();
+    let rest = &cmd[start..];
+    let skill = rest
+        .split(['/', ' ', '\'', '"'])
+        .find(|token| !token.is_empty())?;
+    Some(skill.to_string())
 }
 
 async fn handle_fs_event(event: Event) {
