@@ -37,7 +37,7 @@ data.
 
 **How sentinel detects it**: The injection scanner runs as a preprocessing
 step on data entering the agent's context. It checks against a pattern
-library (maintained in `references/injection-patterns.json`) covering known
+library (maintained in `scripts/src/patterns/mod.rs`) covering known
 prompt injection techniques. Confidence scores are attached; HIGH confidence
 blocks the data by default, MEDIUM surfaces a warning.
 

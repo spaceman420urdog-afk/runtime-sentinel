@@ -2,7 +2,10 @@ use crate::audit::{AuditReport, Finding, Severity};
 
 pub fn print_audit(report: &AuditReport, json: bool) {
     if json {
-        println!("{}", serde_json::to_string_pretty(report).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(report).unwrap_or_default()
+        );
         return;
     }
 
@@ -35,7 +38,10 @@ pub fn print_audit(report: &AuditReport, json: bool) {
     let high = count_severity(report, Severity::High);
     let medium = count_severity(report, Severity::Medium);
 
-    println!("Summary: {} critical  {} high  {} medium", critical, high, medium);
+    println!(
+        "Summary: {} critical  {} high  {} medium",
+        critical, high, medium
+    );
 
     if critical > 0 || high > 0 {
         println!();
@@ -48,7 +54,10 @@ pub fn print_audit(report: &AuditReport, json: bool) {
 
 pub fn print_check(report: &AuditReport, json: bool) {
     if json {
-        println!("{}", serde_json::to_string_pretty(report).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(report).unwrap_or_default()
+        );
         return;
     }
 

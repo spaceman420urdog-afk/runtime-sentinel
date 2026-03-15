@@ -6,8 +6,8 @@ mod audit;
 mod daemon;
 mod egress;
 mod injection;
-mod payment;
 mod patterns;
+mod payment;
 mod report;
 
 #[derive(Parser)]
@@ -138,7 +138,10 @@ async fn main() -> Result<()> {
 
         Command::Isolate { skill } => {
             audit::isolate_skill(&skill).await?;
-            println!("Skill '{}' quarantined. Review ~/.sentinel/quarantine/", skill);
+            println!(
+                "Skill '{}' quarantined. Review ~/.sentinel/quarantine/",
+                skill
+            );
         }
 
         Command::Report { skill } => {
@@ -149,25 +152,21 @@ async fn main() -> Result<()> {
             println!("Report submitted to ClawHub for '{}'", skill);
         }
 
-        Command::Daemon { action } => {
-            match action {
-                DaemonAction::Start => daemon::start(cli.offline).await?,
-                DaemonAction::Stop => daemon::stop().await?,
-                DaemonAction::Status => daemon::status().await?,
-                DaemonAction::Logs { lines } => daemon::logs(lines).await?,
-            }
-        }
+        Command::Daemon { action } => match action {
+            DaemonAction::Start => daemon::start(cli.offline).await?,
+            DaemonAction::Stop => daemon::stop().await?,
+            DaemonAction::Status => daemon::status().await?,
+            DaemonAction::Logs { lines } => daemon::logs(lines).await?,
+        },
 
-        Command::Wallet { action } => {
-            match action {
-                WalletAction::Show => payment::show_wallet().await?,
-                WalletAction::Fund => payment::show_fund_qr().await?,
-                WalletAction::SetLimit { amount } => payment::set_limit(amount).await?,
-                WalletAction::Export => payment::export_mnemonic().await?,
-                WalletAction::Recover => payment::recover_wallet().await?,
-                WalletAction::Diagnose => payment::diagnose().await?,
-            }
-        }
+        Command::Wallet { action } => match action {
+            WalletAction::Show => payment::show_wallet().await?,
+            WalletAction::Fund => payment::show_fund_qr().await?,
+            WalletAction::SetLimit { amount } => payment::set_limit(amount).await?,
+            WalletAction::Export => payment::export_mnemonic().await?,
+            WalletAction::Recover => payment::recover_wallet().await?,
+            WalletAction::Diagnose => payment::diagnose().await?,
+        },
     }
 
     Ok(())

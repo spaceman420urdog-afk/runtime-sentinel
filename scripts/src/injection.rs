@@ -22,10 +22,7 @@ pub fn scan_text(content: &str, source_label: &str) -> Vec<Finding> {
                     skill: source_label.to_string(),
                     severity: *severity,
                     category: FindingCategory::InjectionPattern,
-                    detail: format!(
-                        "Prompt injection pattern '{}' detected",
-                        pattern_name
-                    ),
+                    detail: format!("Prompt injection pattern '{}' detected", pattern_name),
                     file: None,
                     line: Some(line_num),
                 });
@@ -72,9 +69,7 @@ pub fn scan_external_data(data: &str, source: &str) -> (bool, Vec<Finding>) {
     let findings = scan_text(data, source);
 
     // Block if any HIGH or CRITICAL findings
-    let should_block = findings
-        .iter()
-        .any(|f| f.severity >= Severity::High);
+    let should_block = findings.iter().any(|f| f.severity >= Severity::High);
 
     (!should_block, findings)
 }
@@ -93,22 +88,21 @@ fn contains_homoglyphs(text: &str) -> bool {
     ];
 
     text.chars().any(|c| ascii_lookalikes.contains(&c))
-        || text.chars().any(|c| {
-            suspicious_ranges
-                .iter()
-                .any(|r| r.contains(&c))
-        })
+        || text
+            .chars()
+            .any(|c| suspicious_ranges.iter().any(|r| r.contains(&c)))
 }
 
 fn find_and_decode_base64(text: &str) -> Option<String> {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
 
     // Look for base64-like tokens of at least 60 chars
     for token in text.split_whitespace() {
         if token.len() < 60 {
             continue;
         }
-        let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '+' && c != '/' && c != '=');
+        let cleaned =
+            token.trim_matches(|c: char| !c.is_alphanumeric() && c != '+' && c != '/' && c != '=');
         if cleaned.len() < 60 {
             continue;
         }

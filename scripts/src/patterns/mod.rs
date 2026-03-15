@@ -11,7 +11,7 @@ pub static CREDENTIAL_PATTERNS: Lazy<Vec<(&'static str, Regex)>> = Lazy::new(|| 
         ),
         (
             "AWS Secret Key",
-            Regex::new(r"(?i)aws.{0,20}secret.{0,20}['\"][0-9a-zA-Z/+]{40}['\"]").unwrap(),
+            Regex::new(r#"(?i)aws.{0,20}secret.{0,20}['"][0-9a-zA-Z/+]{40}['"]"#).unwrap(),
         ),
         (
             "GitHub Personal Access Token",
