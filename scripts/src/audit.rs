@@ -139,12 +139,20 @@ pub async fn isolate_skill(skill_name: &str) -> Result<()> {
 
     let skill_path = skills_dir.join(skill_name);
     if !skill_path.exists() {
-        anyhow::bail!("Skill '{}' not found in {}", skill_name, skills_dir.display());
+        anyhow::bail!(
+            "Skill '{}' not found in {}",
+            skill_name,
+            skills_dir.display()
+        );
     }
 
     let dest = quarantine_dir.join(skill_name);
     fs::rename(&skill_path, &dest).await?;
-    info!("Skill '{}' moved to quarantine: {}", skill_name, dest.display());
+    info!(
+        "Skill '{}' moved to quarantine: {}",
+        skill_name,
+        dest.display()
+    );
     Ok(())
 }
 
@@ -165,11 +173,7 @@ pub async fn report_skill(skill_name: &str) -> Result<()> {
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
-async fn audit_skill_dir(
-    path: &Path,
-    skill_name: &str,
-    offline: bool,
-) -> Result<Vec<Finding>> {
+async fn audit_skill_dir(path: &Path, skill_name: &str, offline: bool) -> Result<Vec<Finding>> {
     let mut findings = Vec::new();
 
     // 1. Hash integrity check
@@ -306,10 +310,7 @@ async fn scan_credentials(path: &Path, skill_name: &str) -> Result<Vec<Finding>>
                                 skill: skill_name.to_string(),
                                 severity: Severity::High,
                                 category: FindingCategory::CredentialExposure,
-                                detail: format!(
-                                    "Possible {} exposed in plaintext",
-                                    pattern_name
-                                ),
+                                detail: format!("Possible {} exposed in plaintext", pattern_name),
                                 file: Some(rel.clone()),
                                 line: Some(i + 1),
                             });
@@ -323,10 +324,7 @@ async fn scan_credentials(path: &Path, skill_name: &str) -> Result<Vec<Finding>>
                                 skill: skill_name.to_string(),
                                 severity: Severity::Medium,
                                 category: FindingCategory::CredentialExposure,
-                                detail: format!(
-                                    "High-entropy token (possible secret) in {}",
-                                    rel
-                                ),
+                                detail: format!("High-entropy token (possible secret) in {}", rel),
                                 file: Some(rel.clone()),
                                 line: Some(i + 1),
                             });
@@ -341,7 +339,9 @@ async fn scan_credentials(path: &Path, skill_name: &str) -> Result<Vec<Finding>>
 
 /// Rough heuristic: high Shannon entropy + alphanumeric/base64 characters
 fn looks_like_secret(s: &str) -> bool {
-    let charset_ok = s.chars().all(|c| c.is_alphanumeric() || "+/=_-".contains(c));
+    let charset_ok = s
+        .chars()
+        .all(|c| c.is_alphanumeric() || "+/=_-".contains(c));
     if !charset_ok {
         return false;
     }
@@ -436,7 +436,11 @@ async fn fetch_clawhub_skill(clawhub_id: &str) -> Result<PathBuf> {
     let url = format!("https://clawhub.ai/api/v1/skills/{}/download", clawhub_id);
     let resp = client.get(&url).send().await?;
     if !resp.status().is_success() {
-        anyhow::bail!("Could not fetch skill '{}' from ClawHub: {}", clawhub_id, resp.status());
+        anyhow::bail!(
+            "Could not fetch skill '{}' from ClawHub: {}",
+            clawhub_id,
+            resp.status()
+        );
     }
     let bytes = resp.bytes().await?;
     let tmp = tempfile::tempdir()?;
@@ -461,10 +465,7 @@ async fn fetch_clawhub_skill(clawhub_id: &str) -> Result<PathBuf> {
     Ok(tmp.into_path().join(skill_name))
 }
 
-async fn update_hash_baseline(
-    _skills_path: &Path,
-    findings: &[Finding],
-) -> Result<bool> {
+async fn update_hash_baseline(_skills_path: &Path, findings: &[Finding]) -> Result<bool> {
     // If no hash mismatches, baseline is current
     let has_mismatch = findings
         .iter()

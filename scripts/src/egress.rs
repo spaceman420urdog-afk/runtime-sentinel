@@ -24,7 +24,10 @@ pub struct EgressEvent {
 }
 
 pub async fn snapshot_connections(skill_pids: &[(u32, String)]) -> Result<Vec<EgressEvent>> {
-    info!("Snapshotting network connections for {} skill processes", skill_pids.len());
+    info!(
+        "Snapshotting network connections for {} skill processes",
+        skill_pids.len()
+    );
 
     #[cfg(target_os = "linux")]
     return linux_connections(skill_pids).await;

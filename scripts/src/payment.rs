@@ -61,7 +61,7 @@ fn usdc_domain() -> alloy::sol_types::Eip712Domain {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WalletConfig {
     pub address: String,
-    pub chain: String,       // "base"
+    pub chain: String, // "base"
     pub daily_limit_usd: f64,
     pub keystore_path: String,
 }
@@ -69,10 +69,10 @@ pub struct WalletConfig {
 /// x402 payment request as returned in a 402 response header
 #[derive(Debug, Deserialize)]
 pub struct PaymentRequest {
-    pub price: String,       // e.g. "$0.01"
-    pub network: String,     // "base"
-    pub token: String,       // "USDC"
-    pub recipient: String,   // treasury address
+    pub price: String,     // e.g. "$0.01"
+    pub network: String,   // "base"
+    pub token: String,     // "USDC"
+    pub recipient: String, // treasury address
     pub duration_secs: u64,
 }
 
@@ -95,7 +95,10 @@ pub async fn setup_wallet() -> Result<()> {
         address: address.clone(),
         chain: "base".to_string(),
         daily_limit_usd: 0.05, // default: auto-approve up to $0.05/day
-        keystore_path: wallet_dir.join("keystore.json").to_string_lossy().to_string(),
+        keystore_path: wallet_dir
+            .join("keystore.json")
+            .to_string_lossy()
+            .to_string(),
     };
     fs::write(&config_path, serde_json::to_string_pretty(&config)?).await?;
 
@@ -226,8 +229,14 @@ pub async fn recover_wallet() -> Result<()> {
     let passphrase_hex = hex::encode(&passphrase);
     let keystore_path = wallet_dir.join("keystore.json");
     let mut rng = rand::thread_rng();
-    encrypt_keystore(&keystore_path, &mut rng, private_key_bytes, &passphrase_hex, None)
-        .map_err(|e| anyhow::anyhow!("Failed to encrypt keystore: {}", e))?;
+    encrypt_keystore(
+        &keystore_path,
+        &mut rng,
+        private_key_bytes,
+        &passphrase_hex,
+        None,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to encrypt keystore: {}", e))?;
 
     // Re-encrypt the mnemonic phrase for this machine
     let mnemonic_key = derive_passphrase(&machine_secret, b"sentinel-mnemonic")?;
@@ -280,7 +289,11 @@ pub async fn diagnose() -> Result<()> {
         .await
         .map(|r| r.status().is_success())
         .unwrap_or(false);
-    println!("  Base RPC ({}): {}", rpc, if rpc_ok { "✓" } else { "UNREACHABLE" });
+    println!(
+        "  Base RPC ({}): {}",
+        rpc,
+        if rpc_ok { "✓" } else { "UNREACHABLE" }
+    );
 
     let facilitator_ok = reqwest::Client::new()
         .get(BASE_FACILITATOR)
@@ -323,7 +336,10 @@ pub async fn execute_x402_payment(
 
         let auto_approve = price_usd <= config.daily_limit_usd;
         if !auto_approve {
-            println!("This exceeds your auto-approve limit (${:.4}). Proceed? [y/N]", config.daily_limit_usd);
+            println!(
+                "This exceeds your auto-approve limit (${:.4}). Proceed? [y/N]",
+                config.daily_limit_usd
+            );
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
             if input.trim().to_lowercase() != "y" {
@@ -440,7 +456,8 @@ async fn generate_wallet(wallet_dir: &std::path::Path) -> Result<String> {
 /// Load the machine-unique 32-byte secret, generating it if it doesn't exist.
 /// Stored at ~/.sentinel/machine.key with 0600 permissions.
 async fn load_or_create_machine_secret(wallet_dir: &std::path::Path) -> Result<[u8; 32]> {
-    let key_path = wallet_dir.parent()
+    let key_path = wallet_dir
+        .parent()
         .unwrap_or(wallet_dir)
         .join("machine.key");
 
@@ -543,7 +560,8 @@ fn load_signer(keystore_path: &std::path::Path) -> Result<PrivateKeySigner> {
     let wallet_dir = keystore_path
         .parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid keystore path"))?;
-    let sentinel_dir = wallet_dir.parent()
+    let sentinel_dir = wallet_dir
+        .parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid wallet dir path"))?;
     let key_path = sentinel_dir.join("machine.key");
 
@@ -588,7 +606,7 @@ async fn sign_usdc_transfer(
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
     let valid_after = U256::from(now.saturating_sub(30)); // 30s grace for clock skew
-    let valid_before = U256::from(now + 300);             // 5 minute window
+    let valid_before = U256::from(now + 300); // 5 minute window
 
     // Random nonce — prevents replay attacks
     let mut nonce_bytes = [0u8; 32];
@@ -662,9 +680,7 @@ async fn fetch_usdc_balance(address: &str) -> Result<f64> {
 async fn load_config() -> Result<WalletConfig> {
     let config_path = sentinel_dir().join("wallet").join("config.json");
     if !config_path.exists() {
-        anyhow::bail!(
-            "Wallet not configured. Run `sentinel setup` first."
-        );
+        anyhow::bail!("Wallet not configured. Run `sentinel setup` first.");
     }
     let content = fs::read_to_string(&config_path).await?;
     Ok(serde_json::from_str(&content)?)

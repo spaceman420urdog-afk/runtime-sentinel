@@ -23,8 +23,7 @@ pub async fn start(offline: bool) -> Result<()> {
     let pid_path = resolve_home(DAEMON_PID_FILE);
 
     if pid_path.exists() {
-        let state: DaemonState =
-            serde_json::from_str(&fs::read_to_string(&pid_path).await?)?;
+        let state: DaemonState = serde_json::from_str(&fs::read_to_string(&pid_path).await?)?;
         println!(
             "Daemon already running (PID {}). Use `sentinel daemon stop` first.",
             state.pid
@@ -45,7 +44,10 @@ pub async fn start(offline: bool) -> Result<()> {
                 info!("Premium session granted: {:?}", resp);
             }
             Err(e) => {
-                warn!("Premium payment failed ({}). Starting in free-tier mode (file watch only).", e);
+                warn!(
+                    "Premium payment failed ({}). Starting in free-tier mode (file watch only).",
+                    e
+                );
             }
         }
     }
@@ -71,8 +73,7 @@ pub async fn stop() -> Result<()> {
         println!("Daemon is not running.");
         return Ok(());
     }
-    let state: DaemonState =
-        serde_json::from_str(&fs::read_to_string(&pid_path).await?)?;
+    let state: DaemonState = serde_json::from_str(&fs::read_to_string(&pid_path).await?)?;
     fs::remove_file(&pid_path).await?;
 
     // Send SIGTERM to the daemon process
@@ -91,8 +92,7 @@ pub async fn status() -> Result<()> {
         println!("Daemon: not running");
         return Ok(());
     }
-    let state: DaemonState =
-        serde_json::from_str(&fs::read_to_string(&pid_path).await?)?;
+    let state: DaemonState = serde_json::from_str(&fs::read_to_string(&pid_path).await?)?;
     println!("Daemon: running (PID {})", state.pid);
     println!("Started: {}", state.started_at);
     match &state.premium_until {

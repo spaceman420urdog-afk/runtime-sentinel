@@ -15,7 +15,7 @@ sentinel daemon start
   → POST https://api.runtime-sentinel.dev/v1/daemon/start
   ← 402 Payment Required
       X-Payment-Request: price=$0.01, network=base, token=USDC,
-                         recipient=0xSENTINEL_TREASURY, duration=86400s
+                         recipient=0x0E0EE00281A8729d4B68CDed99d430324350a305, duration=86400s
   → User sees price and confirms (or auto-confirms if below threshold)
   → sentinel signs USDC transfer from ~/.sentinel/wallet
   → POST (retry) with X-Payment header (signed authorization)
