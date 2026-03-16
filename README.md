@@ -120,7 +120,7 @@ cargo build --release
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+MIT-0 — see [LICENSE](LICENSE).
 
 ---
 
